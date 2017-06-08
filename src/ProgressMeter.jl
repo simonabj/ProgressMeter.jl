@@ -4,7 +4,8 @@ module ProgressMeter
 
 using Compat
 
-export Progress, ProgressThresh, BarGlyphs, next!, update!, cancel, finish!, @showprogress
+export Progress, ProgressThresh, BarGlyphs, next!, update!, cancel, finish!, @showprogress,
+       @progress, @info
 
 """
 `ProgressMeter` contains a suite of utilities for displaying progress
