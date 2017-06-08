@@ -1,4 +1,4 @@
-function pmap(pool::WorkerPool, f, c; output::IO=STDERR)
+function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
     meters = Array{Progress}(nworkers(pool))
     channels = [RemoteChannel(() -> Channel{Any}(16), w) for w in 1:nworkers()]
     remaining = length(c)
@@ -10,7 +10,6 @@ function pmap(pool::WorkerPool, f, c; output::IO=STDERR)
 
     done = false
     lastPrint = time()
-    dt = 0.1
     print(output, "\n"^(nworkers(pool) + 2))
 
     @async while true
