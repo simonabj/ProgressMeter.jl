@@ -69,6 +69,7 @@ type Progress <: AbstractProgress
     color::Symbol           # default to green
     output::IO              # output stream into which the progress is written
     numprintedvalues::Int   # num values printed below progress in last iteration
+    do_not_print::Bool
 
     function Progress(n::Integer;
                       dt::Real=0.1,
@@ -76,11 +77,12 @@ type Progress <: AbstractProgress
                       color::Symbol=:green,
                       output::IO=STDERR,
                       barlen::Integer=tty_width(desc),
-                      barglyphs::BarGlyphs=BarGlyphs('|','█','█',' ','|'))
+                      barglyphs::BarGlyphs=BarGlyphs('|','█','█',' ','|'),
+                      do_not_print::Bool=false)
         counter = 0
         tfirst = tlast = time()
         printed = false
-        new(n, dt, counter, tfirst, tlast, printed, desc, barlen, barglyphs, color, output, 0)
+        new(n, dt, counter, tfirst, tlast, printed, desc, barlen, barglyphs, color, output, 0, do_not_print)
     end
 end
 
@@ -136,28 +138,8 @@ tty_width(desc) = max(0, displaysize()[2] - (length(desc) + 29))
 # update progress display
 function updateProgress!(p::Progress; showvalues = Any[], valuecolor = :blue)
     t = time()
-    if p.counter >= p.n
-        if p.counter == p.n && p.printed
-            percentage_complete = 100.0 * p.counter / p.n
-            bar = barstring(p.barlen, percentage_complete, barglyphs=p.barglyphs)
-            dur = durationstring(t-p.tfirst)
-            msg = @sprintf "%s%3u%%%s Time: %s" p.desc round(Int, percentage_complete) bar dur
-            move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
-            printover(p.output, msg, p.color)
-            printvalues!(p, showvalues; color = valuecolor)
-            println(p.output)
-        end
-        return
-    end
-
-    if t > p.tlast+p.dt
-        percentage_complete = 100.0 * p.counter / p.n
-        bar = barstring(p.barlen, percentage_complete, barglyphs=p.barglyphs)
-        elapsed_time = t - p.tfirst
-        est_total_time = 100 * elapsed_time / percentage_complete
-        eta_sec = round(Int, est_total_time - elapsed_time )
-        eta = durationstring(eta_sec)
-        msg = @sprintf "%s%3u%%%s  ETA: %s" p.desc round(Int, percentage_complete) bar eta
+    if (p.counter >= p.n && p.printed) || t > p.tlast + p.dt
+        msg = progress_meter_string(p, t)
         move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
         printover(p.output, msg, p.color)
         printvalues!(p, showvalues; color = valuecolor)
@@ -166,8 +148,35 @@ function updateProgress!(p::Progress; showvalues = Any[], valuecolor = :blue)
         # connection.
         p.tlast = t + 2*(time()-t)
         p.printed = true
+
+        if p.counter >= p.n
+            println(p.output)
+        end
     end
 end
+
+function progress_meter_string(p::Progress, t)
+    if p.counter >= p.n && p.printed
+        percentage_complete = 100.0 * p.counter / p.n
+        bar = barstring(p.barlen, percentage_complete, barglyphs=p.barglyphs)
+        dur = durationstring(t-p.tfirst)
+        return @sprintf "%s%3u%%%s Time: %s" p.desc round(Int, percentage_complete) bar dur
+    end
+
+    percentage_complete = 100.0 * p.counter / p.n
+    bar = barstring(p.barlen, percentage_complete, barglyphs=p.barglyphs)
+    elapsed_time = t - p.tfirst
+    est_total_time = 100 * elapsed_time / percentage_complete
+    if est_total_time == Inf
+        eta = "Inf"
+    else
+        eta_sec = round(Int, est_total_time - elapsed_time )
+        eta = durationstring(eta_sec)
+    end
+    
+    return @sprintf "%s%3u%%%s  ETA: %s" p.desc round(Int, percentage_complete) bar eta
+end
+progress_meter_string(p::Progress) = progress_meter_string(p, time())
 
 function updateProgress!(p::ProgressThresh; showvalues = Any[], valuecolor = :blue)
     t = time()
@@ -209,7 +218,7 @@ You may optionally change the color of the display. See also `update!`.
 """
 function next!(p::Progress; options...)
     p.counter += 1
-    updateProgress!(p; options...)
+    p.do_not_print || updateProgress!(p; options...)
 end
 
 function next!(p::Progress, color::Symbol; options...)
@@ -230,7 +239,7 @@ You may optionally change the color of the display. See also `next!`.
 """
 function update!(p::Progress, counter::Int; options...)
     p.counter = counter
-    updateProgress!(p; options...)
+    p.do_not_print || updateProgress!(p; options...)
 end
 
 function update!(p::Progress, counter::Int, color::Symbol; options...)
@@ -485,5 +494,7 @@ macro showprogress(args...)
         end
     end
 end
+
+include("pmap.jl")
 
 end

@@ -1,12 +1,3 @@
-import ProgressMeter
-import Base.Test.@test
-import Base.Test.@test_throws
-
-using Compat
-
-srand(123)
-
-
 function testfunc(n, dt, tsleep)
     p = ProgressMeter.Progress(n, dt)
     for i = 1:n
