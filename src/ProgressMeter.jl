@@ -165,6 +165,11 @@ function progress_meter_string(p::Progress, t)
     end
 
     percentage_complete = 100.0 * p.counter / p.n
+
+    if isnan(percentage_complete) || isinf(percentage_complete)
+        percentage_complete = 0.0
+    end
+    
     bar = barstring(p.barlen, percentage_complete, barglyphs=p.barglyphs)
     elapsed_time = t - p.tfirst
     est_total_time = 100 * elapsed_time / percentage_complete

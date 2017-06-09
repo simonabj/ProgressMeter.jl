@@ -67,7 +67,7 @@ macro progress(progress, num)
     if myid() == 1          # progress is a ProgressMeter
         esc(:(ProgressMeter.update!($progress, $num)))
     else                    # progress is a RemoteChannel
-        esc(:(put!($progress, $num)))
+        esc(:(@async put!($progress, $num); yield() ))
     end
 end
 
