@@ -33,7 +33,7 @@ INFO: Done
 
 Or, we can run several copies of `test_function` on the worker processes and see the progress of each one:
 ```julia
-julia> ProgressMeter.pmap(test_function1, [50, 50, 100, 25, 10, 50])
+julia> ProgressMeter.pmap(test_function, [50, 50, 100, 25, 10, 50])
 2 tasks remaining to start
 -------------------------------
 optional label  40%|██████████████                      |  ETA: 0:00:04
