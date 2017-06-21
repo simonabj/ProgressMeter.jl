@@ -1,4 +1,4 @@
-function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
+function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.5)
     meters = Array{Progress}(nworkers(pool))
     channels = [RemoteChannel(() -> Channel{Any}(16), w) for w in 1:nworkers()]
     remaining = length(c)
@@ -10,6 +10,8 @@ function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
 
     done = false
     lastPrint = time()
+
+    #clear space for the progress meters
     print(output, "\n"^(nworkers(pool) + 2))
 
     @async while true
@@ -19,6 +21,8 @@ function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
 
                 if typeof(update) == Tuple{String, Int64}
                     meters[i] = Progress(update[2], desc=update[1], do_not_print=true)
+                elseif update < 0
+                    finish!(meters[i])
                 else
                     update!(meters[i], update)
                 end
@@ -43,6 +47,7 @@ function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
         end
 
         yield()
+
         done && break
     end
 
@@ -55,24 +60,58 @@ function pmap(pool::WorkerPool, f, c; output::IO=STDERR, dt::Real=0.1)
 end
 pmap(f, c) = pmap(default_worker_pool(), f, c)
 
-macro setup(progress, str, n)
-    if myid() == 1
-        esc(:($progress = ProgressMeter.Progress($n, desc=$str)) )
-    else
-        esc(:(put!($progress, ($str, $n) )) )
-    end
-end
-
-macro progress(progress, num)
-    if myid() == 1          # progress is a ProgressMeter
-        esc(:(ProgressMeter.update!($progress, $num)))
-    else                    # progress is a RemoteChannel
-        esc(:(@async put!($progress, $num); yield() ))
-    end
-end
-
 macro info(str)
     if myid() == 1
-        esc(:(Base.print_with_color(:green, "INFO:  ", $str, "\n")))
+        esc(:(Base.print_with_color(:cyan, "INFO: ", $str, "\n")))
+    end
+end
+
+macro parallelprogress(args...)
+    if length(args) < 2
+        throw(ArgumentError("@paralleprogress requires at least two arguments"))
+    end
+    metersym = args[1]
+    progressargs = args[2:end-1]
+    loop = args[end]
+
+    if loop.head != :for
+        throw(ArgumentError("@paralleprogress only works on for loops"))
+    end
+
+    progressString = "Progress: "
+    if length(progressargs) > 0
+        progressString = progressargs[1]
+    end
+
+    loopIttr = loop.args[1].args[2]
+    loopVar = loop.args[1].args[1]
+    loopBody = loop.args[2].args
+    loopLength = :( length($loopIttr) )
+
+    if myid() == 1
+        setup = esc(:($metersym = ProgressMeter.Progress($loopLength, desc=$progressString) ))
+        update = :(ProgressMeter.update!($metersym, $loopVar))
+        finish = esc(:(ProgressMeter.finish!($metersym)))
+    else
+        setup = esc(:(put!($metersym, ($progressString, $loopLength)); lastUpdateTime = time() ))
+        update = quote
+                    t = time()
+                    if t > lastUpdateTime + 0.5
+                        @async put!($metersym, $loopVar)
+                        lastUpdateTime = t
+                    end
+
+                    yield()
+                end
+        finish = esc(:(put!($metersym, -1)))
+    end
+
+    push!(loop.args[2].args, update)
+    loop = esc(loop)
+
+    return quote
+        $setup
+        $loop
+        $finish
     end
 end

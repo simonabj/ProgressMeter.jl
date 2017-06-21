@@ -1,128 +1,43 @@
 # ProgressMeter.jl
 
-[![Build Status](https://travis-ci.org/timholy/ProgressMeter.jl.svg?branch=master)](https://travis-ci.org/timholy/ProgressMeter.jl)
-
-Progress meter for long-running operations in Julia
-
-## Installation
-
-Within julia, execute
-```julia
-Pkg.add("ProgressMeter")
-```
+This is a fork of Tim Holy's excelent Julia Progress Meter. It adds support for multiple progress meters from worker processes using a new `pmap` function.
 
 ## Usage
 
-### Progress meters for tasks with a pre-determined number of steps
-
-This works for functions that process things in loops.
-Here's a demonstration of how to use it:
-
+First, add some worker processes and define a work function:
 ```julia
-using ProgressMeter
+addprocs(4)
 
-@showprogress 1 "Computing..." for i in 1:50
-    sleep(0.1)
-end
-```
+@everywhere using ProgressMeter
 
-This will use a minimum update interval of 1 second, and show the ETA and final duration.  If your computation runs so quickly that it never needs to show progress, no extraneous output will be displayed.
+@everywhere function test_function(x, p=nothing)
+    @info("Running with value $x")
 
-The `@showprogress` macro wraps a `for` loop or comprehension, as long as the object being iterated over implements the `length` method.  This macro will correctly handle any `continue` statements in a `for` loop as well.
-
-You can also control progress updates and reports manually:
-
-```julia
-function my_long_running_function(filenames::Array)
-    n = length(filenames)
-    p = Progress(n, 1)   # minimum update interval: 1 second
-    for f in filenames
-        # Here's where you do all the hard, slow work
-        next!(p)
+    @parallelprogress p "optional label " for i in 1:x
+        sleep(0.1)
     end
+
+    @info("Done")
+    return x
 end
 ```
 
-For tasks such as reading file data where the progress increment varies between iterations, you can use `update!`:
-
+Now we can run this locally on the master process, and it will print out the helpful diagnostic info:
 ```julia
-using ProgressMeter
-
-function readFileLines(fileName::String)
-    file = open(fileName,"r")
-
-    seekend(file)
-    fileSize = position(file)
-
-    seekstart(file)
-    p = Progress(fileSize, 1)   # minimum update interval: 1 second
-    while !eof(file)
-        line = readline(file)
-        # Here's where you do all the hard, slow work
-
-        update!(p, position(file))
-    end
-end
+julia> test_function(100)
+INFO: Running with value 100
+optional label 100%|████████████████████████████████████| Time: 0:00:10
+INFO: Done
+100
 ```
 
-Optionally, a description string can be specified which will be prepended to the output, and a progress meter `M` characters long can be shown.  E.g.
-
+Or, we can run several copies of `test_function` on the worker processes and see the progress of each one:
 ```julia
-p = Progress(n, 1, "Computing initial pass...", 50)
+julia> ProgressMeter.pmap(test_function1, [50, 50, 100, 25, 10, 50])
+2 tasks remaining to start
+-------------------------------
+optional label  40%|██████████████                      |  ETA: 0:00:04
+optional label  80%|█████████████████████████████       |  ETA: 0:00:01
+optional label  40%|██████████████                      |  ETA: 0:00:04
+optional label  20%|███████                             |  ETA: 0:00:10
 ```
-
-will yield
-
-```
-Computing initial pass...53%|███████████████████████████                       |  ETA: 0:09:02
-```
-
-in a manner similar to [python-progressbar](https://code.google.com/p/python-progressbar/).
-
-Also, the glyphs used in the bar may be specified by passing a `BarGlyphs` object as the keyword argument `barglyphs`. The `BarGlyphs` constructor can either take 5 characters as arguments or a single 5 character string. E.g.
-
-```julia
-p = Progress(n, 1, barglyphs=BarGlyphs("[=> ]"), 50)
-```
-
-will yield
-
-```
-Progress: 53%[==========================>                       ]  ETA: 0:09:02
-```
-
-### Progress meters for tasks with an unknown number of steps
-
-Some tasks only terminate when some criterion is satisfied, for
-example to achieve convergence within a specified tolerance.  In such
-circumstances, you can use the `ProgressThresh` type:
-
-```julia
-prog = ProgressThresh(1e-5, "Minimizing:")
-for val in logspace(2, -6, 20)
-    ProgressMeter.update!(prog, val)
-    sleep(0.1)
-end
-```
-
-This will display progress until `val` drops below the threshold value (1e-5).
-
-### Printing additional information
-
-You can also print and update information related to the computation by using
-the `showvalues` keyword. The following example displays the iteration counter
-and the value of a dummy variable `x` below the progress meter:
-
-```julia
-x,n = 1,10
-p = Progress(n)
-for iter = 1:10
-    x *= 2
-    sleep(0.5)
-    ProgressMeter.next!(p; showvalues = [(:iter,iter), (:x,x)])
-end
-```
-
-## Credits
-
-Thanks to Alan Bahm, Andrew Burroughs, and Jim Garrison for major enhancements to this package.
