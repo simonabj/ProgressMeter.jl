@@ -1,6 +1,6 @@
 # ProgressMeter.jl
 
-This is a fork of Tim Holy's excelent Julia Progress Meter. It adds support for multiple progress meters from worker processes using a new `pmap` function.
+This is a fork of Tim Holy's excellent progress meter package. It adds support for multiple progress meters from worker processes using a new `pmap` function.
 
 ## Usage
 
